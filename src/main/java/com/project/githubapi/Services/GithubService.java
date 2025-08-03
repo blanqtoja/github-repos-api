@@ -11,6 +11,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -27,6 +28,10 @@ public class GithubService {
         }
         catch (HttpClientErrorException.NotFound exception) {
             throw new UserNotFoundException("User not found");
+        }
+
+        if (response.getBody() == null || response.getBody().length == 0) {
+            return List.of();
         }
 
         return Arrays.stream(response.getBody())
