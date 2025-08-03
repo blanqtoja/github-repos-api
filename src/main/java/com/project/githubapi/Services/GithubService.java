@@ -11,7 +11,6 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -48,6 +47,9 @@ public class GithubService {
         String url = "https://api.github.com/repos/" + owner + "/" + repo + "/branches";
         ResponseEntity<BranchResponse[]> response = restTemplate.getForEntity(url, BranchResponse[].class);
 
+        if (response.getBody() == null || response.getBody().length == 0) {
+            return List.of();
+        }
         // return array of branches mapped to DTO
         return Arrays.stream(response.getBody())
                 .map(b -> new BranchDTO(b.getName(), b.getCommit().getSha()))
