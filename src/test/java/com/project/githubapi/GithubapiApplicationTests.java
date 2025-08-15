@@ -1,67 +1,68 @@
 package com.project.githubapi;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
-
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class GithubApiIntegrationTest {
+@AutoConfigureWebTestClient
+@WireMockTest(httpPort = 8089)
+class GithubapiApplicationTests {
 
-	@Autowired
-	private TestRestTemplate restTemplate;
+    @Autowired
+    private WebTestClient webTestClient;
 
-	@Test
-	void shouldReturnNonForkReposWithBranches() throws JsonProcessingException {
-		// given: owner login
-		// it is guaranteed to have at least one repository which is not fork
-		String username = "mojombo";
+    @Test
+    void shouldReturnNonForkReposWithBranches() {
+        // given
+        final String username = "testuser";
+        
+        stubFor(get(urlEqualTo("/users/" + username + "/repos"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("[{\"name\":\"test-repo\",\"owner\":{\"login\":\"testuser\"},\"fork\":false}]"
+                        )));
+        
+        stubFor(get(urlEqualTo("/repos/testuser/test-repo/branches"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("[{\"name\":\"main\",\"commit\":{\"sha\":\"abc123\"}}]"
+                        )));
 
-		// when: making api request to our endpoint
-		ResponseEntity<String> response = restTemplate.getForEntity(
-				"/api/github/username?username=" + username, String.class
-		);
+        // when & then
+        webTestClient.get()
+                .uri("/api/github/username?username=" + username)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$[0].name").isEqualTo("test-repo")
+                .jsonPath("$[0].ownerLogin").isEqualTo("testuser")
+                .jsonPath("$[0].branches[0].name").isEqualTo("main")
+                .jsonPath("$[0].branches[0].lastCommitSHA").isEqualTo("abc123");
+    }
 
-		// then: verify buisness requirepents
-		assertEquals(HttpStatus.OK, response.getStatusCode());
-		String body = response.getBody();
-		// check if body exist
-		assertNotNull(body);
+    @Test
+    void shouldReturn404WhenUserNotFound() {
+        // given
+        final String username = "nonexistentuser";
+        
+        stubFor(get(urlEqualTo("/users/" + username + "/repos"))
+                .willReturn(aResponse().withStatus(404)));
 
-		// parse string to
-		ObjectMapper objectMapper = new ObjectMapper();
-		List<Map<String, Object>> repos = objectMapper.readValue(body, new TypeReference<>() {});
-
-		// at least one repo
-		assertFalse(repos.isEmpty());
-
-		// for each repo check details
-		for (Map<String, Object> repo : repos) {
-			assertNotNull(repo.get("name"));
-			assertEquals(username, repo.get("ownerLogin"));
-
-			@SuppressWarnings("unchecked")
-			List<Map<String, Object>> branches = (List<Map<String, Object>>) repo.get("branches");
-			assertNotNull(branches);
-			assertFalse(branches.isEmpty());
-
-			for (Map<String, Object> branch : branches) {
-				assertNotNull(branch.get("name"));
-				assertNotNull(branch.get("lastCommitSHA"));
-			}
-		}
-	}
+        // when & then
+        webTestClient.get()
+                .uri("/api/github/username?username=" + username)
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(404)
+                .jsonPath("$.message").isEqualTo("User not found");
+    }
 }
